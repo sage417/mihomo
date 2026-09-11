@@ -161,14 +161,11 @@ func (t *DomainTrie[T]) Optimize() {
 }
 
 func (t *DomainTrie[T]) Foreach(fn func(domain string, data T) bool) {
-	for key, data := range t.root.getChildren() {
-		recursion([]string{key}, data, fn)
-		if !data.isEmpty() {
-			if !fn(joinDomain([]string{key}), data.data) {
-				return
-			}
-		}
+	if t.root == nil {
+		return
 	}
+	items := make([]string, 0, 5)
+	_ = recursion(&items, t.root, fn)
 }
 
 func (t *DomainTrie[T]) IsEmpty() bool {
@@ -178,27 +175,78 @@ func (t *DomainTrie[T]) IsEmpty() bool {
 	return len(t.root.getChildren()) == 0
 }
 
-func recursion[T any](items []string, node *Node[T], fn func(domain string, data T) bool) bool {
-	for key, data := range node.getChildren() {
-		newItems := append([]string{key}, items...)
-		if !data.isEmpty() {
-			domain := joinDomain(newItems)
-			if domain[0] == domainStepByte {
-				domain = complexWildcard + domain
-			}
-			if !fn(domain, data.Data()) {
+// Size returns count of domain entries stored in trie
+func (t *DomainTrie[T]) Size() int {
+	if t == nil || t.root == nil {
+		return 0
+	}
+	var cnt int
+	items := make([]string, 0, 5)
+	sizeRecursion(&items, t.root, &cnt)
+	return cnt
+}
+
+func sizeRecursion[T any](items *[]string, node *Node[T], cnt *int) {
+	for key, childNode := range node.getChildren() {
+		*items = append(*items, key)
+		if !childNode.isEmpty() {
+			*cnt++
+		}
+		sizeRecursion(items, childNode, cnt)
+		*items = (*items)[:len(*items)-1]
+	}
+}
+
+func recursion[T any](items *[]string, node *Node[T], fn func(domain string, data T) bool) bool {
+	for key, childNode := range node.getChildren() {
+		*items = append(*items, key)
+		if !childNode.isEmpty() {
+			domain := reverseJoin(*items, domainStep)
+			if !fn(domain, childNode.Data()) {
+				*items = (*items)[:len(*items)-1]
 				return false
 			}
 		}
-		if !recursion(newItems, data, fn) {
+		if !recursion(items, childNode, fn) {
+			*items = (*items)[:len(*items)-1]
 			return false
 		}
+		*items = (*items)[:len(*items)-1]
 	}
 	return true
 }
 
 func joinDomain(items []string) string {
 	return strings.Join(items, domainStep)
+}
+
+func reverseJoin(slice []string, sep string) string {
+	if len(slice) == 0 {
+		return ""
+	}
+
+	totalLen := -len(sep) + len(complexWildcard)
+	for _, s := range slice {
+		totalLen += len(s) + len(sep)
+	}
+
+	var builder strings.Builder
+	builder.Grow(totalLen)
+
+	head := slice[len(slice)-1]
+	if len(head) == 0 || head[0] == domainStepByte {
+		builder.WriteString(complexWildcard)
+	}
+	if len(head) > 0 {
+		builder.WriteString(head)
+	}
+
+	for i := len(slice) - 2; i >= 0; i-- {
+		builder.WriteString(sep)
+		builder.WriteString(slice[i])
+	}
+
+	return builder.String()
 }
 
 // New returns a new, empty Trie.

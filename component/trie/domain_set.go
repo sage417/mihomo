@@ -28,7 +28,11 @@ type qElt struct{ s, e, col int }
 
 // NewDomainSet creates a new *DomainSet struct, from a DomainTrie.
 func (t *DomainTrie[T]) NewDomainSet() *DomainSet {
-	reserveDomains := make([]string, 0)
+	if t.IsEmpty() {
+		return nil
+	}
+
+	reserveDomains := make([]string, 0, t.Size())
 	t.Foreach(func(domain string, data T) bool {
 		reserveDomains = append(reserveDomains, utils.Reverse(domain))
 		return true
@@ -43,9 +47,11 @@ func (t *DomainTrie[T]) NewDomainSet() *DomainSet {
 	ss := &DomainSet{}
 	lIdx := 0
 
-	queue := []qElt{{0, len(keys), 0}}
-	for i := 0; i < len(queue); i++ {
-		elt := queue[i]
+	queue := NewRingQueue[qElt](len(keys) / 2)
+	queue.Push(qElt{0, len(keys), 0})
+
+	for i := 0; queue.Len() > 0; i++ {
+		elt, _ := queue.Pop()
 		if elt.col == len(keys[elt.s]) {
 			elt.s++
 			// a leaf node
@@ -58,7 +64,7 @@ func (t *DomainTrie[T]) NewDomainSet() *DomainSet {
 
 			for ; j < elt.e && keys[j][elt.col] == keys[frm][elt.col]; j++ {
 			}
-			queue = append(queue, qElt{frm, j, elt.col + 1})
+			queue.Push(qElt{frm, j, elt.col + 1})
 			ss.labels = append(ss.labels, keys[frm][elt.col])
 			setBit(&ss.labelBitmap, lIdx, 0)
 			lIdx++
